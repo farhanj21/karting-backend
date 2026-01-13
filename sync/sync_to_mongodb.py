@@ -113,8 +113,11 @@ def sync_track(track_info):
     # Parse dates
     df['date_obj'] = df['Date'].apply(parse_date)
 
-    # Filter out invalid times (0 or negative)
+    # Filter out invalid times (0 or negative) and outliers (> 1:45)
     df = df[df['best_time_seconds'] > 0]
+    CUTOFF_SECONDS = 105.0  # 01:45.000 - matches lap analysis notebooks
+    df = df[df['best_time_seconds'] <= CUTOFF_SECONDS]
+    print(f"After filtering (< 01:45.000): {len(df)} records")
 
     # Calculate statistics
     print("\nCalculating statistics...")
