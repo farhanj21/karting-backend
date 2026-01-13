@@ -80,10 +80,6 @@ cp scraper/.env.example scraper/.env
 
 Edit `.env` and add your MongoDB URI:
 
-```env
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/karting-analysis
-```
-
 ### 3. Sync Data to MongoDB
 
 ```bash
