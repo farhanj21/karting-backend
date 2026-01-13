@@ -1,0 +1,66 @@
+name: Sync to MongoDB
+
+on:
+  push:
+    paths:
+      - 'Sportzilla/data_sportzilla.csv'
+      - 'Apex Autodrome/data_apex.csv'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync-to-mongodb:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r sync/requirements.txt
+
+      - name: Verify CSV files exist
+        run: |
+          echo "Checking for CSV files..."
+          if [ -f "Sportzilla/data_sportzilla.csv" ]; then
+            echo "✓ Found Sportzilla CSV ($(wc -l < Sportzilla/data_sportzilla.csv) lines)"
+          else
+            echo "✗ Sportzilla CSV not found"
+            exit 1
+          fi
+          if [ -f "Apex Autodrome/data_apex.csv" ]; then
+            echo "✓ Found Apex CSV ($(wc -l < 'Apex Autodrome/data_apex.csv') lines)"
+          else
+            echo "✗ Apex CSV not found"
+            exit 1
+          fi
+
+      - name: Sync data to MongoDB
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python sync/sync_to_mongodb.py
+
+      - name: Upload CSV files (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: csv-files
+          path: |
+            Sportzilla/*.csv
+            Apex Autodrome/*.csv
+          retention-days: 7
+
+      - name: Notify on completion
+        if: success()
+        run: |
+          echo "✓ MongoDB sync completed successfully!"
+          echo "Timestamp: $(date)"
+          echo "Sportzilla: $(wc -l < Sportzilla/data_sportzilla.csv) records"
+          echo "Apex: $(wc -l < 'Apex Autodrome/data_apex.csv') records"
