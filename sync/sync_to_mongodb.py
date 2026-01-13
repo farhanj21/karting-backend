@@ -35,7 +35,16 @@ if not MONGODB_URI:
     print("Please create a .env file with your MongoDB connection string")
     sys.exit(1)
 
+# Validate and sanitize URI
+MONGODB_URI = MONGODB_URI.strip()  # Remove any leading/trailing whitespace
+if not MONGODB_URI.startswith(('mongodb://', 'mongodb+srv://')):
+    print("Error: Invalid MongoDB URI format")
+    print(f"URI must start with 'mongodb://' or 'mongodb+srv://'")
+    print(f"Current URI starts with: '{MONGODB_URI[:20]}...'")
+    sys.exit(1)
+
 print("Connecting to MongoDB...")
+print(f"URI scheme: {MONGODB_URI.split('://')[0]}://")
 client = MongoClient(MONGODB_URI)
 db = client['karting-analysis']
 tracks_col = db['tracks']
