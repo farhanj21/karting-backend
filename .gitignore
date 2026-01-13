@@ -53,6 +53,7 @@ logs/
 *.temp
 *.bak
 *.cache
+tmpclaude-*
 
 # OS files
 Thumbs.db
