@@ -58,7 +58,11 @@ TRACKS_DATA = [
     {
         'name': 'Sportzilla Formula Karting',
         'location': 'Lahore, Pakistan',
-        'csv_path': 'Sportzilla/data_sportzilla.csv',
+        'csv_paths': [
+            'Sportzilla/data_sportzilla_sprint_karts.csv',
+            'Sportzilla/data_sportzilla_championship_karts.csv',
+            'Sportzilla/data_sportzilla_pro_karts.csv'
+        ],
         'description': 'Premier karting track in Lahore with technical layout'
     },
     {
@@ -90,15 +94,36 @@ def sync_track(track_info):
     print(f"Processing: {track_info['name']}")
     print(f"{'='*60}")
 
-    # Read CSV file
-    csv_path = Path(__file__).parent.parent / track_info['csv_path']
-    if not csv_path.exists():
-        print(f"Error: CSV file not found at {csv_path}")
-        return
+    # Handle both single csv_path and multiple csv_paths
+    if 'csv_paths' in track_info:
+        # Multiple CSV files (e.g., different kart types)
+        dfs = []
+        for csv_rel_path in track_info['csv_paths']:
+            csv_path = Path(__file__).parent.parent / csv_rel_path
+            if not csv_path.exists():
+                print(f"Warning: CSV file not found at {csv_path}, skipping...")
+                continue
+            print(f"Reading CSV from: {csv_path}")
+            df_temp = pd.read_csv(csv_path)
+            dfs.append(df_temp)
 
-    print(f"Reading CSV from: {csv_path}")
-    df = pd.read_csv(csv_path)
-    print(f"Loaded {len(df)} records")
+        if not dfs:
+            print(f"Error: No valid CSV files found for {track_info['name']}")
+            return
+
+        # Combine all dataframes
+        df = pd.concat(dfs, ignore_index=True)
+        print(f"Loaded {len(df)} total records from {len(dfs)} CSV files")
+    else:
+        # Single CSV file (backward compatibility for Apex)
+        csv_path = Path(__file__).parent.parent / track_info['csv_path']
+        if not csv_path.exists():
+            print(f"Error: CSV file not found at {csv_path}")
+            return
+
+        print(f"Reading CSV from: {csv_path}")
+        df = pd.read_csv(csv_path)
+        print(f"Loaded {len(df)} records")
 
     # Clean data
     df = clean_data(df)
@@ -143,11 +168,18 @@ def sync_track(track_info):
     record_holder = record_row['Name']
     record_holder_slug = create_slug(record_holder)
 
+    # Get available kart types for this track (if any)
+    available_kart_types = []
+    if 'Kart Type' in df.columns:
+        available_kart_types = sorted(df['Kart Type'].dropna().unique().tolist())
+
     print(f"World Record: {format_seconds_to_time(world_record)} by {record_holder}")
     print(f"Total Drivers: {total_drivers}")
     print(f"Mean: {format_seconds_to_time(mean_time)}")
     print(f"Median: {format_seconds_to_time(median_time)}")
     print(f"Std Dev: {std_dev:.3f}s")
+    if available_kart_types:
+        print(f"Available Kart Types: {', '.join(available_kart_types)}")
 
     # Calculate z-scores and tiers
     print("\nCalculating tiers...")
@@ -180,6 +212,7 @@ def sync_track(track_info):
         'slug': track_slug,
         'location': track_info['location'],
         'description': track_info.get('description'),
+        'kartTypes': available_kart_types,  # Add available kart types
         'stats': {
             'totalDrivers': total_drivers,
             'worldRecord': world_record,
@@ -234,6 +267,7 @@ def sync_track(track_info):
             'date': row['date_obj'],
             'maxKmh': int(row['Max km/h']) if pd.notna(row['Max km/h']) else None,
             'maxG': float(row['Max G']) if pd.notna(row['Max G']) else None,
+            'kartType': row.get('Kart Type'),  # Add kart type field
             'tier': row['tier'],
             'percentile': row['percentile'],
             'gapToP1': row['gap_to_p1'],
@@ -242,9 +276,14 @@ def sync_track(track_info):
             'updatedAt': datetime.utcnow()
         }
 
-        # Upsert lap record
+        # Upsert lap record (include kartType in unique constraint)
+        kart_type = row.get('Kart Type')
+        filter_query = {'trackSlug': track_slug, 'driverSlug': driver_slug}
+        if kart_type:
+            filter_query['kartType'] = kart_type
+
         records_col.update_one(
-            {'trackSlug': track_slug, 'driverSlug': driver_slug},
+            filter_query,
             {'$set': lap_record, '$setOnInsert': {'createdAt': datetime.utcnow()}},
             upsert=True
         )
@@ -261,6 +300,7 @@ def sync_track(track_info):
             'date': row['date_obj'],
             'maxKmh': int(row['Max km/h']) if pd.notna(row['Max km/h']) else None,
             'maxG': float(row['Max G']) if pd.notna(row['Max G']) else None,
+            'kartType': row.get('Kart Type'),  # Add kart type field
             'tier': row['tier'],
             'percentile': row['percentile'],
             'gapToP1': row['gap_to_p1'],
@@ -312,8 +352,14 @@ def create_indexes():
     records_col.create_index([('trackId', ASCENDING), ('position', ASCENDING)])
     records_col.create_index([('trackSlug', ASCENDING), ('position', ASCENDING)])
     records_col.create_index([('driverSlug', ASCENDING)])
-    records_col.create_index([('trackSlug', ASCENDING), ('driverSlug', ASCENDING)], unique=True)
+    # Unique constraint includes kartType (allows multiple nulls for tracks without kart types)
+    records_col.create_index(
+        [('trackSlug', ASCENDING), ('driverSlug', ASCENDING), ('kartType', ASCENDING)],
+        unique=True
+    )
     records_col.create_index([('tier', ASCENDING), ('trackId', ASCENDING)])
+    records_col.create_index([('trackSlug', ASCENDING), ('kartType', ASCENDING)])  # Index for kart type filtering
+    records_col.create_index([('kartType', ASCENDING)])
 
     print("✓ Indexes created successfully!")
 
