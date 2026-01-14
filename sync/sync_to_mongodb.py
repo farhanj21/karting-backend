@@ -307,6 +307,12 @@ def sync_track(track_info):
             'interval': row['interval']
         }
 
+        # First, remove any existing record for this track + kart type combination
+        pull_filter = {
+            'trackSlug': track_slug,
+            'kartType': kart_type  # Will match None for tracks without kart types
+        }
+
         drivers_col.update_one(
             {'slug': driver_slug},
             {
@@ -317,9 +323,17 @@ def sync_track(track_info):
                     'updatedAt': datetime.utcnow()
                 },
                 '$setOnInsert': {'createdAt': datetime.utcnow()},
-                '$addToSet': {'records': driver_record}
+                '$pull': {'records': pull_filter}
             },
             upsert=True
+        )
+
+        # Then add the new/updated record
+        drivers_col.update_one(
+            {'slug': driver_slug},
+            {
+                '$push': {'records': driver_record}
+            }
         )
         drivers_processed += 1
 
@@ -348,11 +362,22 @@ def create_indexes():
     drivers_col.create_index([('slug', ASCENDING)], unique=True)
     drivers_col.create_index([('profileUrl', ASCENDING)])
 
+    # Drop old lap record index that doesn't include kartType
+    try:
+        print("Checking for old index without kartType...")
+        existing_indexes = records_col.index_information()
+        if 'trackSlug_1_driverSlug_1' in existing_indexes:
+            print("Dropping old index 'trackSlug_1_driverSlug_1'...")
+            records_col.drop_index('trackSlug_1_driverSlug_1')
+            print("✓ Old index dropped")
+    except Exception as e:
+        print(f"Note: Could not drop old index (may not exist): {e}")
+
     # Lap record indexes
     records_col.create_index([('trackId', ASCENDING), ('position', ASCENDING)])
     records_col.create_index([('trackSlug', ASCENDING), ('position', ASCENDING)])
     records_col.create_index([('driverSlug', ASCENDING)])
-    # Unique constraint includes kartType (allows multiple nulls for tracks without kart types)
+    # Unique constraint includes kartType (allows same driver on different kart types)
     records_col.create_index(
         [('trackSlug', ASCENDING), ('driverSlug', ASCENDING), ('kartType', ASCENDING)],
         unique=True
