@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo import MongoClient, ASCENDING, DESCENDING, UpdateOne
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -64,6 +64,15 @@ TRACKS_DATA = [
             'Sportzilla/data_sportzilla_pro_karts.csv'
         ],
         'description': 'Premier karting track in Lahore with technical layout'
+    },
+    {
+        'name': '2F2F Formula Karting',
+        'location': 'Lahore, Pakistan',
+        'csv_paths': [
+            '2F2F-Lahore/data_2f2f_rx8.csv',
+            '2F2F-Lahore/data_2f2f_lr5.csv'
+        ],
+        'description': 'High-performance karting track in Lahore'
     },
     {
         'name': 'Apex Autodrome',
@@ -243,15 +252,18 @@ def sync_track(track_info):
         print(f"Updated existing track document")
         track_id = tracks_col.find_one({'slug': track_slug})['_id']
 
-    # Process each driver
-    print(f"\nProcessing {len(df)} drivers...")
-    drivers_processed = 0
-    records_created = 0
+    # Process drivers using bulk operations for performance
+    print(f"\nProcessing {len(df)} drivers with bulk operations...")
+
+    # Prepare bulk operations for lap records
+    lap_record_ops = []
+    driver_data = {}  # Store driver info keyed by slug
 
     for idx, row in df.iterrows():
         driver_name = row['Name']
         driver_slug = create_slug(driver_name)
         profile_url = row['Profile URL']
+        kart_type = row.get('Kart Type')
 
         # Create lap record document
         lap_record = {
@@ -267,7 +279,7 @@ def sync_track(track_info):
             'date': row['date_obj'],
             'maxKmh': int(row['Max km/h']) if pd.notna(row['Max km/h']) else None,
             'maxG': float(row['Max G']) if pd.notna(row['Max G']) else None,
-            'kartType': row.get('Kart Type'),  # Add kart type field
+            'kartType': kart_type,
             'tier': row['tier'],
             'percentile': row['percentile'],
             'gapToP1': row['gap_to_p1'],
@@ -276,20 +288,21 @@ def sync_track(track_info):
             'updatedAt': datetime.utcnow()
         }
 
-        # Upsert lap record (include kartType in unique constraint)
-        kart_type = row.get('Kart Type')
+        # Build filter query for lap record
         filter_query = {'trackSlug': track_slug, 'driverSlug': driver_slug}
         if kart_type:
             filter_query['kartType'] = kart_type
 
-        records_col.update_one(
-            filter_query,
-            {'$set': lap_record, '$setOnInsert': {'createdAt': datetime.utcnow()}},
-            upsert=True
+        # Add to bulk operations
+        lap_record_ops.append(
+            UpdateOne(
+                filter_query,
+                {'$set': lap_record, '$setOnInsert': {'createdAt': datetime.utcnow()}},
+                upsert=True
+            )
         )
-        records_created += 1
 
-        # Upsert driver document
+        # Store driver record data
         driver_record = {
             'trackId': track_id,
             'trackName': track_info['name'],
@@ -300,45 +313,79 @@ def sync_track(track_info):
             'date': row['date_obj'],
             'maxKmh': int(row['Max km/h']) if pd.notna(row['Max km/h']) else None,
             'maxG': float(row['Max G']) if pd.notna(row['Max G']) else None,
-            'kartType': row.get('Kart Type'),  # Add kart type field
+            'kartType': kart_type,
             'tier': row['tier'],
             'percentile': row['percentile'],
             'gapToP1': row['gap_to_p1'],
             'interval': row['interval']
         }
 
-        # First, remove any existing record for this track + kart type combination
-        pull_filter = {
-            'trackSlug': track_slug,
-            'kartType': kart_type  # Will match None for tracks without kart types
-        }
-
-        drivers_col.update_one(
-            {'slug': driver_slug},
-            {
-                '$set': {
-                    'name': driver_name,
-                    'slug': driver_slug,
-                    'profileUrl': profile_url,
-                    'updatedAt': datetime.utcnow()
-                },
-                '$setOnInsert': {'createdAt': datetime.utcnow()},
-                '$pull': {'records': pull_filter}
-            },
-            upsert=True
-        )
-
-        # Then add the new/updated record
-        drivers_col.update_one(
-            {'slug': driver_slug},
-            {
-                '$push': {'records': driver_record}
+        # Group records by driver slug
+        if driver_slug not in driver_data:
+            driver_data[driver_slug] = {
+                'name': driver_name,
+                'profileUrl': profile_url,
+                'records': []
             }
-        )
-        drivers_processed += 1
+        driver_data[driver_slug]['records'].append(driver_record)
 
-        if drivers_processed % 500 == 0:
-            print(f"  Processed {drivers_processed}/{len(df)} drivers...")
+    # Execute bulk lap record operations
+    print(f"  Upserting {len(lap_record_ops)} lap records...")
+    records_created = 0
+    if lap_record_ops:
+        result = records_col.bulk_write(lap_record_ops, ordered=False)
+        records_created = result.upserted_count + result.modified_count
+        print(f"  ✓ Lap records: {result.upserted_count} inserted, {result.modified_count} updated")
+
+    # Process driver documents in batches
+    print(f"  Processing {len(driver_data)} unique drivers...")
+    drivers_processed = 0
+    driver_ops_pull = []
+    driver_ops_push = []
+
+    for driver_slug, driver_info in driver_data.items():
+        # First operation: upsert driver and pull old records for this track
+        for record in driver_info['records']:
+            pull_filter = {
+                'trackSlug': track_slug,
+                'kartType': record['kartType']
+            }
+
+            driver_ops_pull.append(
+                UpdateOne(
+                    {'slug': driver_slug},
+                    {
+                        '$set': {
+                            'name': driver_info['name'],
+                            'slug': driver_slug,
+                            'profileUrl': driver_info['profileUrl'],
+                            'updatedAt': datetime.utcnow()
+                        },
+                        '$setOnInsert': {'createdAt': datetime.utcnow()},
+                        '$pull': {'records': pull_filter}
+                    },
+                    upsert=True
+                )
+            )
+
+        # Second operation: push new records
+        driver_ops_push.append(
+            UpdateOne(
+                {'slug': driver_slug},
+                {'$push': {'records': {'$each': driver_info['records']}}}
+            )
+        )
+
+    # Execute driver bulk operations
+    if driver_ops_pull:
+        print(f"  Removing old records for {len(driver_ops_pull)} driver-track combinations...")
+        drivers_col.bulk_write(driver_ops_pull, ordered=False)
+
+    if driver_ops_push:
+        print(f"  Adding new records for {len(driver_ops_push)} drivers...")
+        result = drivers_col.bulk_write(driver_ops_push, ordered=False)
+        drivers_processed = result.modified_count
+        print(f"  ✓ Updated {drivers_processed} driver documents")
 
     print(f"\n✓ Track sync complete!")
     print(f"  - Drivers processed: {drivers_processed}")
