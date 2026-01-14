@@ -3,7 +3,9 @@ name: Sync to MongoDB
 on:
   push:
     paths:
-      - 'Sportzilla/data_sportzilla.csv'
+      - 'Sportzilla/data_sportzilla_sprint_karts.csv'
+      - 'Sportzilla/data_sportzilla_championship_karts.csv'
+      - 'Sportzilla/data_sportzilla_pro_karts.csv'
       - 'Apex Autodrome/data_apex.csv'
   workflow_dispatch:  # Allow manual trigger
 
@@ -28,12 +30,28 @@ jobs:
       - name: Verify CSV files exist
         run: |
           echo "Checking for CSV files..."
-          if [ -f "Sportzilla/data_sportzilla.csv" ]; then
-            echo "✓ Found Sportzilla CSV ($(wc -l < Sportzilla/data_sportzilla.csv) lines)"
-          else
-            echo "✗ Sportzilla CSV not found"
+
+          # Check Sportzilla kart-specific CSV files
+          SPORTZILLA_FOUND=false
+          if [ -f "Sportzilla/data_sportzilla_sprint_karts.csv" ]; then
+            echo "✓ Found Sportzilla Sprint Karts CSV ($(wc -l < Sportzilla/data_sportzilla_sprint_karts.csv) lines)"
+            SPORTZILLA_FOUND=true
+          fi
+          if [ -f "Sportzilla/data_sportzilla_championship_karts.csv" ]; then
+            echo "✓ Found Sportzilla Championship Karts CSV ($(wc -l < Sportzilla/data_sportzilla_championship_karts.csv) lines)"
+            SPORTZILLA_FOUND=true
+          fi
+          if [ -f "Sportzilla/data_sportzilla_pro_karts.csv" ]; then
+            echo "✓ Found Sportzilla Pro Karts CSV ($(wc -l < Sportzilla/data_sportzilla_pro_karts.csv) lines)"
+            SPORTZILLA_FOUND=true
+          fi
+
+          if [ "$SPORTZILLA_FOUND" = false ]; then
+            echo "✗ No Sportzilla CSV files found"
             exit 1
           fi
+
+          # Check Apex Autodrome CSV
           if [ -f "Apex Autodrome/data_apex.csv" ]; then
             echo "✓ Found Apex CSV ($(wc -l < 'Apex Autodrome/data_apex.csv') lines)"
           else
@@ -62,5 +80,16 @@ jobs:
         run: |
           echo "✓ MongoDB sync completed successfully!"
           echo "Timestamp: $(date)"
-          echo "Sportzilla: $(wc -l < Sportzilla/data_sportzilla.csv) records"
+          echo ""
+          echo "Sportzilla Records:"
+          if [ -f "Sportzilla/data_sportzilla_sprint_karts.csv" ]; then
+            echo "  - Sprint Karts: $(wc -l < Sportzilla/data_sportzilla_sprint_karts.csv) records"
+          fi
+          if [ -f "Sportzilla/data_sportzilla_championship_karts.csv" ]; then
+            echo "  - Championship Karts: $(wc -l < Sportzilla/data_sportzilla_championship_karts.csv) records"
+          fi
+          if [ -f "Sportzilla/data_sportzilla_pro_karts.csv" ]; then
+            echo "  - Pro Karts: $(wc -l < Sportzilla/data_sportzilla_pro_karts.csv) records"
+          fi
+          echo ""
           echo "Apex: $(wc -l < 'Apex Autodrome/data_apex.csv') records"
