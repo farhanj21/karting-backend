@@ -6,6 +6,8 @@ on:
       - 'Sportzilla/data_sportzilla_sprint_karts.csv'
       - 'Sportzilla/data_sportzilla_championship_karts.csv'
       - 'Sportzilla/data_sportzilla_pro_karts.csv'
+      - '2F2F-Lahore/data_2f2f_rx8.csv'
+      - '2F2F-Lahore/data_2f2f_sr5.csv'
       - 'Apex Autodrome/data_apex.csv'
   workflow_dispatch:  # Allow manual trigger
 
@@ -51,6 +53,22 @@ jobs:
             exit 1
           fi
 
+          # Check 2F2F Formula Karting CSV files
+          F2F2F_FOUND=false
+          if [ -f "2F2F-Lahore/data_2f2f_rx8.csv" ]; then
+            echo "✓ Found 2F2F RX8 CSV ($(wc -l < 2F2F-Lahore/data_2f2f_rx8.csv) lines)"
+            F2F2F_FOUND=true
+          fi
+          if [ -f "2F2F-Lahore/data_2f2f_sr5.csv" ]; then
+            echo "✓ Found 2F2F SR5 CSV ($(wc -l < 2F2F-Lahore/data_2f2f_sr5.csv) lines)"
+            F2F2F_FOUND=true
+          fi
+
+          if [ "$F2F2F_FOUND" = false ]; then
+            echo "✗ No 2F2F CSV files found"
+            exit 1
+          fi
+
           # Check Apex Autodrome CSV
           if [ -f "Apex Autodrome/data_apex.csv" ]; then
             echo "✓ Found Apex CSV ($(wc -l < 'Apex Autodrome/data_apex.csv') lines)"
@@ -72,6 +90,7 @@ jobs:
           name: csv-files
           path: |
             Sportzilla/*.csv
+            2F2F-Lahore/*.csv
             Apex Autodrome/*.csv
           retention-days: 7
 
@@ -90,6 +109,14 @@ jobs:
           fi
           if [ -f "Sportzilla/data_sportzilla_pro_karts.csv" ]; then
             echo "  - Pro Karts: $(wc -l < Sportzilla/data_sportzilla_pro_karts.csv) records"
+          fi
+          echo ""
+          echo "2F2F Formula Karting Records:"
+          if [ -f "2F2F-Lahore/data_2f2f_rx8.csv" ]; then
+            echo "  - RX8: $(wc -l < 2F2F-Lahore/data_2f2f_rx8.csv) records"
+          fi
+          if [ -f "2F2F-Lahore/data_2f2f_sr5.csv" ]; then
+            echo "  - SR5: $(wc -l < 2F2F-Lahore/data_2f2f_sr5.csv) records"
           fi
           echo ""
           echo "Apex: $(wc -l < 'Apex Autodrome/data_apex.csv') records"

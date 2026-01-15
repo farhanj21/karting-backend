@@ -70,7 +70,7 @@ TRACKS_DATA = [
         'location': 'Lahore, Pakistan',
         'csv_paths': [
             '2F2F-Lahore/data_2f2f_rx8.csv',
-            '2F2F-Lahore/data_2f2f_lr5.csv'
+            '2F2F-Lahore/data_2f2f_sr5.csv'
         ],
         'description': 'High-performance karting track in Lahore'
     },
