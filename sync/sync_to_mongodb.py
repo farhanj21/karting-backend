@@ -75,6 +75,14 @@ TRACKS_DATA = [
         'description': 'High-performance karting track in Lahore'
     },
     {
+        'name': '2F2F Formula Karting Islamabad',
+        'location': 'Islamabad, Pakistan',
+        'csv_paths': [
+            '2F2F-Islamabad/data_2f2f_islamabad_sr5.csv'
+        ],
+        'description': 'High-performance karting track in Islamabad'
+    },
+    {
         'name': 'Apex Autodrome',
         'location': 'Lahore, Pakistan',
         'csv_path': 'Apex Autodrome/data_apex.csv',

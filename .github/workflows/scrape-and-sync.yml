@@ -8,6 +8,7 @@ on:
       - 'Sportzilla/data_sportzilla_pro_karts.csv'
       - '2F2F-Lahore/data_2f2f_rx8.csv'
       - '2F2F-Lahore/data_2f2f_sr5.csv'
+      - '2F2F-Islamabad/data_2f2f_islamabad_sr5.csv'
       - 'Apex Autodrome/data_apex.csv'
   workflow_dispatch:  # Allow manual trigger
 
@@ -56,11 +57,15 @@ jobs:
           # Check 2F2F Formula Karting CSV files
           F2F2F_FOUND=false
           if [ -f "2F2F-Lahore/data_2f2f_rx8.csv" ]; then
-            echo "✓ Found 2F2F RX8 CSV ($(wc -l < 2F2F-Lahore/data_2f2f_rx8.csv) lines)"
+            echo "✓ Found 2F2F Lahore RX8 CSV ($(wc -l < 2F2F-Lahore/data_2f2f_rx8.csv) lines)"
             F2F2F_FOUND=true
           fi
           if [ -f "2F2F-Lahore/data_2f2f_sr5.csv" ]; then
-            echo "✓ Found 2F2F SR5 CSV ($(wc -l < 2F2F-Lahore/data_2f2f_sr5.csv) lines)"
+            echo "✓ Found 2F2F Lahore SR5 CSV ($(wc -l < 2F2F-Lahore/data_2f2f_sr5.csv) lines)"
+            F2F2F_FOUND=true
+          fi
+          if [ -f "2F2F-Islamabad/data_2f2f_islamabad_sr5.csv" ]; then
+            echo "✓ Found 2F2F Islamabad SR5 CSV ($(wc -l < 2F2F-Islamabad/data_2f2f_islamabad_sr5.csv) lines)"
             F2F2F_FOUND=true
           fi
 
@@ -91,6 +96,7 @@ jobs:
           path: |
             Sportzilla/*.csv
             2F2F-Lahore/*.csv
+            2F2F-Islamabad/*.csv
             Apex Autodrome/*.csv
           retention-days: 7
 
@@ -111,12 +117,17 @@ jobs:
             echo "  - Pro Karts: $(wc -l < Sportzilla/data_sportzilla_pro_karts.csv) records"
           fi
           echo ""
-          echo "2F2F Formula Karting Records:"
+          echo "2F2F Formula Karting Lahore Records:"
           if [ -f "2F2F-Lahore/data_2f2f_rx8.csv" ]; then
             echo "  - RX8: $(wc -l < 2F2F-Lahore/data_2f2f_rx8.csv) records"
           fi
           if [ -f "2F2F-Lahore/data_2f2f_sr5.csv" ]; then
             echo "  - SR5: $(wc -l < 2F2F-Lahore/data_2f2f_sr5.csv) records"
+          fi
+          echo ""
+          echo "2F2F Formula Karting Islamabad Records:"
+          if [ -f "2F2F-Islamabad/data_2f2f_islamabad_sr5.csv" ]; then
+            echo "  - SR5: $(wc -l < 2F2F-Islamabad/data_2f2f_islamabad_sr5.csv) records"
           fi
           echo ""
           echo "Apex: $(wc -l < 'Apex Autodrome/data_apex.csv') records"
