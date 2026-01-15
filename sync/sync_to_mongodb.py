@@ -170,10 +170,8 @@ def sync_track(track_info):
     df = df[df['best_time_seconds'] <= CUTOFF_SECONDS]
     print(f"After filtering (< 01:45.000): {len(df)} records")
 
-    # Calculate statistics
-    print("\nCalculating statistics...")
-    mean_time = df['best_time_seconds'].mean()
-    std_dev = df['best_time_seconds'].std()
+    # Calculate track-level statistics (for overall track stats)
+    print("\nCalculating track statistics...")
     median_time = df['best_time_seconds'].median()
     world_record = df['best_time_seconds'].min()
     slowest_time = df['best_time_seconds'].max()
@@ -196,40 +194,94 @@ def sync_track(track_info):
 
     # Get available kart types for this track (if any)
     available_kart_types = []
-    if 'Kart Type' in df.columns:
+    has_kart_types = 'Kart Type' in df.columns and df['Kart Type'].notna().any()
+    if has_kart_types:
         available_kart_types = sorted(df['Kart Type'].dropna().unique().tolist())
 
     print(f"World Record: {format_seconds_to_time(world_record)} by {record_holder}")
     print(f"Total Drivers: {total_drivers}")
-    print(f"Mean: {format_seconds_to_time(mean_time)}")
     print(f"Median: {format_seconds_to_time(median_time)}")
-    print(f"Std Dev: {std_dev:.3f}s")
     if available_kart_types:
         print(f"Available Kart Types: {', '.join(available_kart_types)}")
 
-    # Calculate z-scores and tiers
-    print("\nCalculating tiers...")
-    df['z_score'] = df['best_time_seconds'].apply(
-        lambda t: calculate_z_score(t, mean_time, std_dev)
-    )
-    df['tier'] = df['z_score'].apply(assign_tier)
+    # Calculate z-scores and tiers PER KART TYPE
+    print("\nCalculating tiers per kart type...")
 
-    # Calculate gaps and intervals
+    # Initialize columns
+    df['z_score'] = 0.0
+    df['tier'] = 'D'
+    df['percentile'] = 0.0
+
+    if has_kart_types:
+        # Process each kart type separately
+        for kart_type in available_kart_types:
+            kart_mask = df['Kart Type'] == kart_type
+            kart_df = df[kart_mask]
+
+            if len(kart_df) == 0:
+                continue
+
+            # Calculate statistics for this kart type
+            kart_mean = kart_df['best_time_seconds'].mean()
+            kart_std = kart_df['best_time_seconds'].std()
+            kart_count = len(kart_df)
+
+            print(f"\n  {kart_type}:")
+            print(f"    Drivers: {kart_count}")
+            print(f"    Mean: {format_seconds_to_time(kart_mean)}")
+            print(f"    Std Dev: {kart_std:.3f}s")
+
+            # Calculate z-scores and tiers for this kart type
+            df.loc[kart_mask, 'z_score'] = kart_df['best_time_seconds'].apply(
+                lambda t: calculate_z_score(t, kart_mean, kart_std)
+            )
+            df.loc[kart_mask, 'tier'] = df.loc[kart_mask, 'z_score'].apply(assign_tier)
+
+            # Calculate percentiles within this kart type
+            # Reset position to be within kart type
+            kart_df_sorted = kart_df.sort_values('best_time_seconds').reset_index(drop=True)
+            kart_df_sorted['kart_position'] = range(1, len(kart_df_sorted) + 1)
+
+            for idx in kart_df_sorted.index:
+                original_idx = kart_df_sorted.loc[idx, 'index'] if 'index' in kart_df_sorted.columns else kart_df_sorted.iloc[idx].name
+                kart_position = kart_df_sorted.loc[idx, 'kart_position']
+                percentile = calculate_percentile(kart_position, kart_count)
+                df.loc[df.index == original_idx, 'percentile'] = percentile
+
+            # Print tier distribution for this kart type
+            tier_counts = df.loc[kart_mask, 'tier'].value_counts().sort_index()
+            print(f"    Tier Distribution:")
+            for tier, count in tier_counts.items():
+                percentage = (count / kart_count) * 100
+                print(f"      {tier}: {count:4d} drivers ({percentage:5.2f}%)")
+    else:
+        # No kart types - calculate for entire track
+        mean_time = df['best_time_seconds'].mean()
+        std_dev = df['best_time_seconds'].std()
+
+        print(f"Mean: {format_seconds_to_time(mean_time)}")
+        print(f"Std Dev: {std_dev:.3f}s")
+
+        df['z_score'] = df['best_time_seconds'].apply(
+            lambda t: calculate_z_score(t, mean_time, std_dev)
+        )
+        df['tier'] = df['z_score'].apply(assign_tier)
+
+        df['percentile'] = df.apply(
+            lambda row: calculate_percentile(row['Position'], total_drivers),
+            axis=1
+        )
+
+        # Print tier distribution
+        tier_counts = df['tier'].value_counts().sort_index()
+        print("\nTier Distribution:")
+        for tier, count in tier_counts.items():
+            percentage = (count / total_drivers) * 100
+            print(f"  {tier}: {count:4d} drivers ({percentage:5.2f}%)")
+
+    # Calculate gaps and intervals (these remain track-level)
     df['gap_to_p1'] = df['best_time_seconds'] - world_record
     df['interval'] = df['best_time_seconds'].diff().fillna(0)
-
-    # Calculate percentiles
-    df['percentile'] = df.apply(
-        lambda row: calculate_percentile(row['Position'], total_drivers),
-        axis=1
-    )
-
-    # Print tier distribution
-    tier_counts = df['tier'].value_counts().sort_index()
-    print("\nTier Distribution:")
-    for tier, count in tier_counts.items():
-        percentage = (count / total_drivers) * 100
-        print(f"  {tier}: {count:4d} drivers ({percentage:5.2f}%)")
 
     # Upsert track document
     print(f"\nUpserting track document...")
