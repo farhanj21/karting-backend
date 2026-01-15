@@ -265,6 +265,23 @@ def sync_track(track_info):
         profile_url = row['Profile URL']
         kart_type = row.get('Kart Type')
 
+        # Helper function to safely convert to numeric
+        def safe_int(value):
+            if pd.isna(value):
+                return None
+            try:
+                return int(float(value))
+            except (ValueError, TypeError):
+                return None
+
+        def safe_float(value):
+            if pd.isna(value):
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
+
         # Create lap record document
         lap_record = {
             'trackId': track_id,
@@ -277,8 +294,8 @@ def sync_track(track_info):
             'bestTime': row['best_time_seconds'],
             'bestTimeStr': row['Best Time'],
             'date': row['date_obj'],
-            'maxKmh': int(row['Max km/h']) if pd.notna(row['Max km/h']) else None,
-            'maxG': float(row['Max G']) if pd.notna(row['Max G']) else None,
+            'maxKmh': safe_int(row['Max km/h']),
+            'maxG': safe_float(row['Max G']),
             'kartType': kart_type,
             'tier': row['tier'],
             'percentile': row['percentile'],
@@ -311,8 +328,8 @@ def sync_track(track_info):
             'bestTime': row['best_time_seconds'],
             'bestTimeStr': row['Best Time'],
             'date': row['date_obj'],
-            'maxKmh': int(row['Max km/h']) if pd.notna(row['Max km/h']) else None,
-            'maxG': float(row['Max G']) if pd.notna(row['Max G']) else None,
+            'maxKmh': safe_int(row['Max km/h']),
+            'maxG': safe_float(row['Max G']),
             'kartType': kart_type,
             'tier': row['tier'],
             'percentile': row['percentile'],
