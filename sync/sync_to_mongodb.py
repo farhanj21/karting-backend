@@ -87,6 +87,15 @@ TRACKS_DATA = [
         'location': 'Lahore, Pakistan',
         'csv_path': 'Apex Autodrome/data_apex.csv',
         'description': 'Fast-paced karting circuit in Lahore'
+    },
+    {
+        'name': 'Omni Karting Circuit',
+        'location': 'Karachi, Pakistan',
+        'csv_paths': [
+            'Omni Circuit/data_omni_circuit_rt8.csv',
+            'Omni Circuit/data_omni_circuit_rx250.csv'
+        ],
+        'description': 'Premier karting circuit in Karachi'
     }
 ]
 

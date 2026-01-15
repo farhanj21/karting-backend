@@ -10,6 +10,8 @@ on:
       - '2F2F-Lahore/data_2f2f_sr5.csv'
       - '2F2F-Islamabad/data_2f2f_islamabad_sr5.csv'
       - 'Apex Autodrome/data_apex.csv'
+      - 'Omni Circuit/data_omni_circuit_rt8.csv'
+      - 'Omni Circuit/data_omni_circuit_rx250.csv'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -82,6 +84,22 @@ jobs:
             exit 1
           fi
 
+          # Check Omni Circuit CSV files
+          OMNI_FOUND=false
+          if [ -f "Omni Circuit/data_omni_circuit_rt8.csv" ]; then
+            echo "✓ Found Omni Circuit RT8 CSV ($(wc -l < 'Omni Circuit/data_omni_circuit_rt8.csv') lines)"
+            OMNI_FOUND=true
+          fi
+          if [ -f "Omni Circuit/data_omni_circuit_rx250.csv" ]; then
+            echo "✓ Found Omni Circuit RX250 CSV ($(wc -l < 'Omni Circuit/data_omni_circuit_rx250.csv') lines)"
+            OMNI_FOUND=true
+          fi
+
+          if [ "$OMNI_FOUND" = false ]; then
+            echo "✗ No Omni Circuit CSV files found"
+            exit 1
+          fi
+
       - name: Sync data to MongoDB
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
@@ -98,6 +116,7 @@ jobs:
             2F2F-Lahore/*.csv
             2F2F-Islamabad/*.csv
             Apex Autodrome/*.csv
+            Omni Circuit/*.csv
           retention-days: 7
 
       - name: Notify on completion
@@ -131,3 +150,11 @@ jobs:
           fi
           echo ""
           echo "Apex: $(wc -l < 'Apex Autodrome/data_apex.csv') records"
+          echo ""
+          echo "Omni Karting Circuit Records:"
+          if [ -f "Omni Circuit/data_omni_circuit_rt8.csv" ]; then
+            echo "  - RT8: $(wc -l < 'Omni Circuit/data_omni_circuit_rt8.csv') records"
+          fi
+          if [ -f "Omni Circuit/data_omni_circuit_rx250.csv" ]; then
+            echo "  - RX250: $(wc -l < 'Omni Circuit/data_omni_circuit_rx250.csv') records"
+          fi

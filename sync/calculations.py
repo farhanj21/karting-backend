@@ -156,6 +156,10 @@ def parse_date(date_str: str) -> datetime:
         >>> parse_date("27.12.2025")
         datetime.datetime(2025, 12, 27, 0, 0)
     """
+    # Handle None, NaN, or empty values
+    if not isinstance(date_str, str) or not date_str or date_str.strip() == '':
+        return None
+
     try:
         return datetime.strptime(date_str, "%d.%m.%Y")
     except ValueError:
@@ -163,8 +167,8 @@ def parse_date(date_str: str) -> datetime:
             # Try alternative format
             return datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
-            print(f"Warning: Could not parse date '{date_str}', using current date")
-            return datetime.now()
+            print(f"Warning: Could not parse date '{date_str}', using None")
+            return None
 
 
 def create_slug(name: str) -> str:
