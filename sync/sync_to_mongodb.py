@@ -50,6 +50,8 @@ db = client['karting-analysis']
 tracks_col = db['tracks']
 drivers_col = db['drivers']
 records_col = db['laprecords']
+warzones_col = db['warzones']
+worldrecordhistory_col = db['worldrecordhistory']
 
 print("Connected successfully!")
 
@@ -114,6 +116,138 @@ def clean_data(df):
     return df
 
 
+def calculate_hall_of_fame(df, track_id, track_slug):
+    """Calculate World Record history (Hall of Fame) for a track."""
+    print("\nCalculating Hall of Fame (World Record History)...")
+
+    # Check if track has kart types
+    has_kart_types = 'Kart Type' in df.columns and df['Kart Type'].notna().any()
+
+    hall_of_fame_records = []
+
+    if has_kart_types:
+        # Process each kart type separately
+        kart_types = df[df['Kart Type'].notna()]['Kart Type'].unique()
+
+        for kart_type in kart_types:
+            kart_df = df[df['Kart Type'] == kart_type].copy()
+            kart_df = kart_df.sort_values('date_obj')  # Sort by date chronologically
+
+            current_record = 9999.0  # Start with impossibly high time
+            record_holders = []
+
+            for _, row in kart_df.iterrows():
+                time = row['best_time_seconds']
+                if time < current_record:
+                    current_record = time
+                    record_holders.append({
+                        'dateBroken': row['date_obj'],
+                        'driverName': row['Name'],
+                        'driverSlug': create_slug(row['Name']),
+                        'profileUrl': row['Profile URL'],
+                        'recordTime': time,
+                        'recordTimeStr': format_seconds_to_time(time),
+                        'kartType': kart_type
+                    })
+
+            # Calculate days reigned for each record holder
+            for i in range(len(record_holders)):
+                if i < len(record_holders) - 1:
+                    # Calculate days between this record and next
+                    next_date = record_holders[i + 1]['dateBroken']
+                    days_reigned = (next_date - record_holders[i]['dateBroken']).days
+                else:
+                    # Current WR holder - calculate days until today
+                    days_reigned = (datetime.utcnow() - record_holders[i]['dateBroken'].replace(tzinfo=None)).days
+
+                record_holders[i]['daysReigned'] = days_reigned
+                record_holders[i]['isCurrent'] = (i == len(record_holders) - 1)
+
+            hall_of_fame_records.extend(record_holders)
+            print(f"  {kart_type}: {len(record_holders)} WR holders")
+
+    else:
+        # No kart types - calculate for entire track
+        df_sorted = df.sort_values('date_obj').copy()
+
+        current_record = 9999.0
+        record_holders = []
+
+        for _, row in df_sorted.iterrows():
+            time = row['best_time_seconds']
+            if time < current_record:
+                current_record = time
+                record_holders.append({
+                    'dateBroken': row['date_obj'],
+                    'driverName': row['Name'],
+                    'driverSlug': create_slug(row['Name']),
+                    'profileUrl': row['Profile URL'],
+                    'recordTime': time,
+                    'recordTimeStr': format_seconds_to_time(time),
+                    'kartType': None
+                })
+
+        # Calculate days reigned
+        for i in range(len(record_holders)):
+            if i < len(record_holders) - 1:
+                next_date = record_holders[i + 1]['dateBroken']
+                days_reigned = (next_date - record_holders[i]['dateBroken']).days
+            else:
+                days_reigned = (datetime.utcnow() - record_holders[i]['dateBroken'].replace(tzinfo=None)).days
+
+            record_holders[i]['daysReigned'] = days_reigned
+            record_holders[i]['isCurrent'] = (i == len(record_holders) - 1)
+
+        hall_of_fame_records = record_holders
+        print(f"  Total: {len(record_holders)} WR holders")
+
+    # Upsert to MongoDB
+    if hall_of_fame_records:
+        print(f"  Upserting {len(hall_of_fame_records)} Hall of Fame records...")
+
+        # First, mark all existing records as not current
+        worldrecordhistory_col.update_many(
+            {'trackSlug': track_slug},
+            {'$set': {'isCurrent': False}}
+        )
+
+        for record in hall_of_fame_records:
+            record_doc = {
+                'trackId': track_id,
+                'trackSlug': track_slug,
+                'driverName': record['driverName'],
+                'driverSlug': record['driverSlug'],
+                'profileUrl': record['profileUrl'],
+                'recordTime': record['recordTime'],
+                'recordTimeStr': record['recordTimeStr'],
+                'kartType': record['kartType'],
+                'dateBroken': record['dateBroken'],
+                'daysReigned': record['daysReigned'],
+                'isCurrent': record['isCurrent'],
+                'updatedAt': datetime.utcnow()
+            }
+
+            filter_query = {
+                'trackSlug': track_slug,
+                'dateBroken': record['dateBroken'],
+                'recordTime': record['recordTime']
+            }
+            if record['kartType']:
+                filter_query['kartType'] = record['kartType']
+            else:
+                filter_query['kartType'] = None
+
+            worldrecordhistory_col.update_one(
+                filter_query,
+                {'$set': record_doc, '$setOnInsert': {'createdAt': datetime.utcnow()}},
+                upsert=True
+            )
+
+        print(f"  [OK] Hall of Fame records upserted successfully")
+
+    return len(hall_of_fame_records)
+
+
 def sync_track(track_info):
     """Sync a single track's data to MongoDB."""
     print(f"\n{'='*60}")
@@ -157,6 +291,9 @@ def sync_track(track_info):
 
     # Create slug for track
     track_slug = create_slug(track_info['name'])
+
+    # Initialize data storage for new stats
+    war_zones_data = []
 
     # Parse times to seconds
     df['best_time_seconds'] = df['Best Time'].apply(parse_time_to_seconds)
@@ -254,6 +391,20 @@ def sync_track(track_info):
             for tier, count in tier_counts.items():
                 percentage = (count / kart_count) * 100
                 print(f"      {tier}: {count:4d} drivers ({percentage:5.2f}%)")
+
+            # Calculate War Zone for this kart type
+            kart_df['time_bucket'] = (kart_df['best_time_seconds'] * 10).round() / 10
+            bucket_counts = kart_df['time_bucket'].value_counts()
+            if len(bucket_counts) > 0:
+                war_zone_time = bucket_counts.idxmax()
+                war_zone_count = int(bucket_counts.max())
+                war_zones_data.append({
+                    'kartType': kart_type,
+                    'timeStart': war_zone_time,
+                    'timeEnd': war_zone_time + 0.1,
+                    'driverCount': war_zone_count
+                })
+                print(f"    War Zone: {format_seconds_to_time(war_zone_time)} - {format_seconds_to_time(war_zone_time + 0.1)} ({war_zone_count} drivers)")
     else:
         # No kart types - calculate for entire track
         mean_time = df['best_time_seconds'].mean()
@@ -278,6 +429,20 @@ def sync_track(track_info):
         for tier, count in tier_counts.items():
             percentage = (count / total_drivers) * 100
             print(f"  {tier}: {count:4d} drivers ({percentage:5.2f}%)")
+
+        # Calculate War Zone for entire track (no kart types)
+        df['time_bucket'] = (df['best_time_seconds'] * 10).round() / 10
+        bucket_counts = df['time_bucket'].value_counts()
+        if len(bucket_counts) > 0:
+            war_zone_time = bucket_counts.idxmax()
+            war_zone_count = int(bucket_counts.max())
+            war_zones_data.append({
+                'kartType': None,
+                'timeStart': war_zone_time,
+                'timeEnd': war_zone_time + 0.1,
+                'driverCount': war_zone_count
+            })
+            print(f"\nWar Zone: {format_seconds_to_time(war_zone_time)} - {format_seconds_to_time(war_zone_time + 0.1)} ({war_zone_count} drivers)")
 
     # Calculate gaps and intervals (these remain track-level)
     df['gap_to_p1'] = df['best_time_seconds'] - world_record
@@ -320,6 +485,35 @@ def sync_track(track_info):
     else:
         print(f"Updated existing track document")
         track_id = tracks_col.find_one({'slug': track_slug})['_id']
+
+    # Upsert War Zone data
+    print(f"\nUpserting {len(war_zones_data)} war zone(s)...")
+    for wz_data in war_zones_data:
+        wz_doc = {
+            'trackId': track_id,
+            'trackSlug': track_slug,
+            'kartType': wz_data['kartType'],
+            'timeStart': wz_data['timeStart'],
+            'timeEnd': wz_data['timeEnd'],
+            'driverCount': wz_data['driverCount'],
+            'updatedAt': datetime.utcnow()
+        }
+
+        filter_query = {'trackSlug': track_slug}
+        if wz_data['kartType']:
+            filter_query['kartType'] = wz_data['kartType']
+        else:
+            filter_query['kartType'] = None
+
+        warzones_col.update_one(
+            filter_query,
+            {'$set': wz_doc, '$setOnInsert': {'createdAt': datetime.utcnow()}},
+            upsert=True
+        )
+    print(f"[OK] War zones upserted successfully")
+
+    # Calculate and store Hall of Fame
+    hall_of_fame_count = calculate_hall_of_fame(df, track_id, track_slug)
 
     # Process drivers using bulk operations for performance
     print(f"\nProcessing {len(df)} drivers with bulk operations...")
@@ -421,7 +615,7 @@ def sync_track(track_info):
     if lap_record_ops:
         result = records_col.bulk_write(lap_record_ops, ordered=False)
         records_created = result.upserted_count + result.modified_count
-        print(f"  ✓ Lap records: {result.upserted_count} inserted, {result.modified_count} updated")
+        print(f"  [OK] Lap records: {result.upserted_count} inserted, {result.modified_count} updated")
 
     # Process driver documents in batches
     print(f"  Processing {len(driver_data)} unique drivers...")
@@ -471,9 +665,9 @@ def sync_track(track_info):
         print(f"  Adding new records for {len(driver_ops_push)} drivers...")
         result = drivers_col.bulk_write(driver_ops_push, ordered=False)
         drivers_processed = result.modified_count
-        print(f"  ✓ Updated {drivers_processed} driver documents")
+        print(f"  [OK] Updated {drivers_processed} driver documents")
 
-    print(f"\n✓ Track sync complete!")
+    print(f"\n[OK] Track sync complete!")
     print(f"  - Drivers processed: {drivers_processed}")
     print(f"  - Lap records created/updated: {records_created}")
 
@@ -502,7 +696,7 @@ def create_indexes():
         if 'trackSlug_1_driverSlug_1' in existing_indexes:
             print("Dropping old index 'trackSlug_1_driverSlug_1'...")
             records_col.drop_index('trackSlug_1_driverSlug_1')
-            print("✓ Old index dropped")
+            print("[OK] Old index dropped")
     except Exception as e:
         print(f"Note: Could not drop old index (may not exist): {e}")
 
@@ -519,7 +713,16 @@ def create_indexes():
     records_col.create_index([('trackSlug', ASCENDING), ('kartType', ASCENDING)])  # Index for kart type filtering
     records_col.create_index([('kartType', ASCENDING)])
 
-    print("✓ Indexes created successfully!")
+    # War Zone indexes
+    warzones_col.create_index([('trackSlug', ASCENDING), ('kartType', ASCENDING)], unique=True)
+    warzones_col.create_index([('trackId', ASCENDING)])
+
+    # World Record History indexes
+    worldrecordhistory_col.create_index([('trackSlug', ASCENDING), ('kartType', ASCENDING), ('dateBroken', ASCENDING)])
+    worldrecordhistory_col.create_index([('trackSlug', ASCENDING), ('kartType', ASCENDING), ('isCurrent', ASCENDING)])
+    worldrecordhistory_col.create_index([('trackId', ASCENDING)])
+
+    print("[OK] Indexes created successfully!")
 
 
 def main():
@@ -551,13 +754,13 @@ def main():
     total_records = sum(r['records'] for r in results)
 
     for result in results:
-        print(f"✓ {result['track']}")
+        print(f"[OK] {result['track']}")
         print(f"    Drivers: {result['drivers']}")
         print(f"    Records: {result['records']}")
 
     print(f"\nTotal: {total_drivers} drivers, {total_records} lap records")
     print(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("\n✓ All tracks synced successfully to MongoDB Atlas!")
+    print("\n[OK] All tracks synced successfully to MongoDB Atlas!")
 
     # Close connection
     client.close()
