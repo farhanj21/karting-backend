@@ -12,7 +12,8 @@
       "Bash(python:*)",
       "Bash(git -C \"C:\\\\Users\\\\f-jaf\\\\OneDrive\\\\Desktop\\\\karting-app\\\\karting-backend\" log --oneline)",
       "Bash(find:*)",
-      "Bash(dir /s \"C:\\\\Users\\\\f-jaf\\\\Desktop\\\\Code\\\\karting-backend\")"
+      "Bash(dir /s \"C:\\\\Users\\\\f-jaf\\\\Desktop\\\\Code\\\\karting-backend\")",
+      "Bash(wc:*)"
     ]
   }
 }
