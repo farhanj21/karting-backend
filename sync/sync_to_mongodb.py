@@ -61,8 +61,10 @@ TRACKS_DATA = [
         'name': 'Sportzilla Formula Karting',
         'location': 'Lahore, Pakistan',
         'csv_paths': [
-            'Sportzilla/data_sportzilla_sprint_karts.csv',
-            'Sportzilla/data_sportzilla_pro_karts.csv'
+            'Sportzilla/data_sportzilla_sprint_karts_og.csv',  # Restore full historical data
+            'Sportzilla/data_sportzilla_sprint_karts.csv',     # Latest top 100 updates\
+            'Sportzilla/data_sportzilla_championship_karts.csv',
+            'Sportzilla/data_sportzilla_pro_karts.csv',
         ],
         'description': 'Premier karting track in Lahore with technical layout'
     },
@@ -87,6 +89,7 @@ TRACKS_DATA = [
         'name': 'Apex Autodrome',
         'location': 'Lahore, Pakistan',
         'csv_paths': [
+            'Apex Autodrome/data_apex_track1_og.csv', # Restore full historical data for Track 1
             'Apex Autodrome/data_apex_track1.csv',
             'Apex Autodrome/data_apex_track2.csv'
         ],
