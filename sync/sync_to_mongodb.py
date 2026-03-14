@@ -351,6 +351,8 @@ def sync_track(track_info):
     df['tier'] = 'D'
     df['percentile'] = 0.0
 
+    stats_by_kart_type = {}  # Store per-kart-type statistics
+
     if has_kart_types:
         # Process each kart type separately
         for kart_type in available_kart_types:
@@ -393,6 +395,26 @@ def sync_track(track_info):
             for tier, count in tier_counts.items():
                 percentage = (count / kart_count) * 100
                 print(f"      {tier}: {count:4d} drivers ({percentage:5.2f}%)")
+
+            # Calculate full statistics for this kart type
+            kart_wr = kart_df['best_time_seconds'].min()
+            kart_record_row = kart_df.loc[kart_df['best_time_seconds'].idxmin()]
+            kart_record_holder = kart_record_row['Name']
+
+            stats_by_kart_type[kart_type] = {
+                'totalDrivers': int(kart_count),
+                'worldRecord': float(kart_wr),
+                'worldRecordStr': format_seconds_to_time(kart_wr),
+                'recordHolder': kart_record_holder,
+                'recordHolderSlug': create_slug(kart_record_holder),
+                'median': float(kart_df['best_time_seconds'].median()),
+                'slowest': float(kart_df['best_time_seconds'].max()),
+                'top1Percent': float(kart_df['best_time_seconds'].quantile(0.01)),
+                'top5Percent': float(kart_df['best_time_seconds'].quantile(0.05)),
+                'top10Percent': float(kart_df['best_time_seconds'].quantile(0.10)),
+                'mean': float(kart_mean),
+                'stdDev': float(kart_std)
+            }
 
             # Calculate War Zone for this kart type
             kart_df['time_bucket'] = (kart_df['best_time_seconds'] * 10).round() / 10
@@ -472,6 +494,7 @@ def sync_track(track_info):
             'metaTime': meta_time,
             'lastUpdated': datetime.utcnow()
         },
+        'statsByKartType': stats_by_kart_type,  # Add per-kart-type statistics
         'updatedAt': datetime.utcnow()
     }
 
